@@ -114,21 +114,46 @@ export class JiraClient {
   }
 
   async getProjects(): Promise<JiraProject[]> {
-    // Try the basic endpoint first
+    // Try multiple approaches to get projects
     try {
-      const projects = await this.makeRequest('/project');
-      console.log('Basic /project endpoint returned:', projects?.length || 0, 'projects');
+      // Try 1: Basic endpoint with expand parameter
+      console.log('Trying basic /project endpoint with expand...');
+      const basicProjects = await this.makeRequest('/project?expand=description,lead,url,projectKeys');
+      console.log('Basic endpoint with expand returned:', basicProjects?.length || 0, 'projects');
       
-      if (projects && projects.length > 0) {
-        return projects;
+      if (basicProjects && basicProjects.length > 0) {
+        return basicProjects;
       }
       
-      // If no projects from basic endpoint, try search endpoint with more permissive parameters
-      console.log('Trying /project/search endpoint...');
-      const searchResult = await this.makeRequest('/project/search?maxResults=50');
-      console.log('Search endpoint returned:', searchResult);
+      // Try 2: Search endpoint with explicit parameters
+      console.log('Trying /project/search with all statuses...');
+      const searchResult = await this.makeRequest('/project/search?maxResults=100&orderBy=name&action=view&status=live&status=archived&status=deleted');
+      console.log('Search with statuses returned:', searchResult);
       
-      return searchResult?.values || [];
+      if (searchResult?.values && searchResult.values.length > 0) {
+        return searchResult.values;
+      }
+      
+      // Try 3: Search endpoint with minimal parameters
+      console.log('Trying /project/search with minimal params...');
+      const minimalSearch = await this.makeRequest('/project/search?maxResults=100');
+      console.log('Minimal search returned:', minimalSearch);
+      
+      if (minimalSearch?.values && minimalSearch.values.length > 0) {
+        return minimalSearch.values;
+      }
+      
+      // Try 4: My permissions endpoint to see what the user can access
+      console.log('Checking user permissions...');
+      const permissions = await this.makeRequest('/mypermissions');
+      console.log('User permissions:', JSON.stringify(permissions, null, 2));
+      
+      // Try 5: Get user info to see what projects they can see
+      console.log('Trying /project/search with typeKey parameter...');
+      const typeSearch = await this.makeRequest('/project/search?typeKey=software&typeKey=business&maxResults=100');
+      console.log('Type-based search returned:', typeSearch);
+      
+      return typeSearch?.values || [];
     } catch (error) {
       console.error('Error in getProjects:', error);
       throw error;
