@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -48,12 +48,24 @@ export default function Settings() {
   const jiraForm = useForm<JiraConfigFormData>({
     resolver: zodResolver(jiraConfigFormSchema),
     defaultValues: {
-      baseUrl: jiraConfig?.baseUrl || "",
-      email: jiraConfig?.email || "",
+      baseUrl: "",
+      email: "",
       apiToken: "",
-      isCloud: jiraConfig?.isCloud || 1,
+      isCloud: 1,
     },
   });
+
+  // Update form when jiraConfig data loads
+  useEffect(() => {
+    if (jiraConfig) {
+      jiraForm.reset({
+        baseUrl: jiraConfig.baseUrl || "",
+        email: jiraConfig.email || "",
+        apiToken: jiraConfig.apiToken || "",
+        isCloud: jiraConfig.isCloud || 1,
+      });
+    }
+  }, [jiraConfig, jiraForm]);
 
   const epicTemplateForm = useForm<EpicTemplateFormData>({
     resolver: zodResolver(epicTemplateFormSchema),
