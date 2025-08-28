@@ -91,3 +91,13 @@ export type InsertGroomingSession = z.infer<typeof insertGroomingSessionSchema>;
 export type GroomingSession = typeof groomingSessions.$inferSelect;
 export type InsertProject = z.infer<typeof insertProjectSchema>;
 export type Project = typeof projects.$inferSelect;
+
+// Lightweight config type used by client for Jira settings
+export type JiraConfig = {
+  id?: string;
+  userId?: string;
+  baseUrl?: string;
+  email?: string;
+  apiToken?: string;
+  createdAt?: Date | null;
+};

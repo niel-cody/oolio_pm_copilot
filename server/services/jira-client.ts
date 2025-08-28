@@ -129,9 +129,8 @@ export class JiraClient {
 
   async getProjects(): Promise<JiraProject[]> {
     try {
-      // First, test authentication with a simple endpoint
+      // First, validate credentials
       console.log('=== Testing Jira Authentication ===');
-      
       try {
         const authTest = await this.makeRequest('/myself');
         console.log('✅ Authentication successful! User:', authTest.displayName);
@@ -139,53 +138,63 @@ export class JiraClient {
         console.error('❌ Authentication failed:', authError);
         throw new Error(`Authentication failed: ${authError}`);
       }
-      
-      console.log('=== Attempting to fetch projects ===');
-      
-      // Try the most basic project endpoint first
-      console.log('1. Trying basic /project endpoint...');
-      const basicProjects = await this.makeRequest('/project');
-      console.log('Basic projects result:', basicProjects?.length || 0, 'projects found');
-      
-      if (basicProjects && basicProjects.length > 0) {
+
+      console.log('=== Fetching projects via /project/search with pagination ===');
+      const expandParams = [
+        'lead',
+        'issueTypes',
+        'description',
+        'avatarUrls',
+        'projectTypeKey',
+        'insight'
+      ].join(',');
+
+      const pageSize = 100;
+      let startAt = 0;
+      let total = Infinity;
+      const allProjects: JiraProject[] = [];
+
+      while (startAt < total) {
+        const searchResult = await this.makeRequest(
+          `/project/search?maxResults=${pageSize}&startAt=${startAt}&expand=${encodeURIComponent(expandParams)}`
+        );
+
+        const values = Array.isArray(searchResult?.values) ? searchResult.values : [];
+        total = typeof searchResult?.total === 'number' ? searchResult.total : values.length;
+        console.log(`Fetched ${values.length} projects (startAt=${startAt})`);
+        allProjects.push(...values);
+
+        if (!searchResult || values.length === 0) break;
+        startAt += pageSize;
+      }
+
+      if (allProjects.length > 0) {
+        console.log(`Total projects fetched via search: ${allProjects.length}`);
+        return allProjects;
+      }
+
+      // Fallback to deprecated endpoint if search returned nothing (some tenants restrict search)
+      console.warn('No projects from /project/search, falling back to deprecated /project endpoint...');
+      const basicProjects = await this.makeRequest(`/project?expand=${encodeURIComponent(expandParams)}`);
+      if (Array.isArray(basicProjects) && basicProjects.length > 0) {
         return basicProjects;
       }
-      
-      // Try project search endpoint
-      console.log('2. Trying /project/search endpoint...');
-      const searchResult = await this.makeRequest('/project/search?maxResults=100');
-      console.log('Search result:', searchResult);
-      
-      if (searchResult?.values && searchResult.values.length > 0) {
-        return searchResult.values;
-      }
-      
-      // If direct project access returns 0 but auth works, try getting projects via issue search
-      console.log('3. Auth works but no projects found. Trying issue search workaround...');
+
+      // Final fallback: infer visible projects from recent issues
+      console.log('Fallback: deriving projects via issue search…');
       const issueResult = await this.makeRequest('/search?jql=order by created desc&maxResults=50&fields=project');
-      
       if (issueResult?.issues) {
-        const projects = new Map();
+        const projectsByKey = new Map<string, any>();
         issueResult.issues.forEach((issue: any) => {
-          if (issue.fields?.project) {
-            const project = issue.fields.project;
-            if (!projects.has(project.key)) {
-              projects.set(project.key, project);
-            }
+          const project = issue?.fields?.project;
+          if (project?.key && !projectsByKey.has(project.key)) {
+            projectsByKey.set(project.key, project);
           }
         });
-        
-        const projectList = Array.from(projects.values());
-        console.log('Found', projectList.length, 'unique projects via issue search');
-        
-        if (projectList.length > 0) {
-          return projectList;
-        }
+        return Array.from(projectsByKey.values());
       }
-      
-      console.log('No projects found through any method');
+
       return [];
-      
     } catch (error) {
       console.error('Error in getProjects:', error);
       throw error;

@@ -254,6 +254,11 @@ As a {persona}, I want {capability} so that {outcome}.
     const newProject: Project = { 
       ...project, 
       id, 
+      description: project.description ?? null,
+      leadDisplayName: project.leadDisplayName ?? null,
+      projectTypeKey: project.projectTypeKey ?? null,
+      avatarUrls: project.avatarUrls ?? null,
+      issueTypes: project.issueTypes ?? null,
       createdAt: new Date(),
       syncedAt: new Date()
     };
@@ -265,7 +270,16 @@ As a {persona}, I want {capability} so that {outcome}.
     const existing = this.projects.get(id);
     if (!existing) return undefined;
     
-    const updated: Project = { ...existing, ...project, syncedAt: new Date() };
+    const updated: Project = { 
+      ...existing, 
+      ...project, 
+      description: project.description ?? (existing as any).description ?? null,
+      leadDisplayName: project.leadDisplayName ?? (existing as any).leadDisplayName ?? null,
+      projectTypeKey: project.projectTypeKey ?? (existing as any).projectTypeKey ?? null,
+      avatarUrls: project.avatarUrls ?? (existing as any).avatarUrls ?? null,
+      issueTypes: project.issueTypes ?? (existing as any).issueTypes ?? null,
+      syncedAt: new Date() 
+    } as Project;
     this.projects.set(id, updated);
     return updated;
   }
