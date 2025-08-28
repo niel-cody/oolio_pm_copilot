@@ -133,7 +133,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('=== Manual Auth Test ===');
       console.log('Email:', email);
       console.log('Token length:', token?.length);
+      console.log('Token first 10 chars:', token?.substring(0, 10));
+      console.log('Token last 10 chars:', token?.substring(token.length - 10));
+      console.log('Has whitespace/newlines?:', /\s/.test(token || ''));
       console.log('Encoded length:', encoded.length);
+      
+      // Test with different User-Agent
+      console.log('Base URL being used:', process.env.JIRA_BASE_URL);
       
       const response = await fetch(`${process.env.JIRA_BASE_URL}/rest/api/3/myself`, {
         headers: {
