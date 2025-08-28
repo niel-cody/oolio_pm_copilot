@@ -132,7 +132,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get projects
+  // Get projects (direct from Jira)
   app.get("/api/jira/projects", async (req, res) => {
     try {
       const jiraConfig = await storage.getJiraConfig(MOCK_USER_ID);
@@ -146,6 +146,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(projects);
     } catch (error) {
       console.error("Get projects error:", error);
+      res.status(500).json({ message: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
+  // Get synced projects from database
+  app.get("/api/projects", async (req, res) => {
+    try {
+      const projects = await storage.getProjects(MOCK_USER_ID);
+      res.json(projects);
+    } catch (error) {
+      console.error("Get synced projects error:", error);
+      res.status(500).json({ message: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
+  // Sync projects from Jira to database
+  app.post("/api/projects/sync", async (req, res) => {
+    try {
+      const jiraConfig = await storage.getJiraConfig(MOCK_USER_ID);
+      if (!jiraConfig) {
+        return res.status(400).json({ message: "Jira configuration not found" });
+      }
+
+      const client = new JiraClient(jiraConfig);
+      const jiraProjects = await client.getProjects();
+      
+      // Sync projects to database
+      const syncedProjects = await storage.syncProjects(MOCK_USER_ID, jiraProjects);
+      
+      res.json({ 
+        message: `Synced ${syncedProjects.length} projects successfully`,
+        projects: syncedProjects
+      });
+    } catch (error) {
+      console.error("Sync projects error:", error);
       res.status(500).json({ message: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
@@ -232,6 +267,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     } catch (error) {
       console.error("Generate release notes error:", error);
+      res.status(500).json({ message: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
+  // Initialize default templates (development only)
+  app.post("/api/initialize-defaults", async (req, res) => {
+    try {
+      const defaultUserId = "default-user";
+      
+      // Check if defaults already exist
+      const existingEpicTemplates = await storage.getEpicTemplates(defaultUserId);
+      const existingStoryTemplates = await storage.getStoryTemplates(defaultUserId);
+      
+      if (existingEpicTemplates.length === 0) {
+        await storage.createEpicTemplate({
+          userId: defaultUserId,
+          name: "Standard Epic",
+          template: `# Problem
+{problem}
+
+# Hypothesis
+{hypothesis}
+
+# Scope
+{scope}
+
+# Non-Goals
+{non_goals}
+
+# KPIs / Success
+- {kpi_1}
+- {kpi_2}
+
+# Acceptance Criteria
+- {ac_1}
+- {ac_2}`,
+          isDefault: 1,
+        });
+      }
+      
+      if (existingStoryTemplates.length === 0) {
+        await storage.createStoryTemplate({
+          userId: defaultUserId,
+          name: "Standard Story",
+          template: `**User Story**  
+As a {persona}, I want {capability} so that {outcome}.
+
+**Acceptance Criteria**  
+- Given {context}, when {action}, then {result}.
+- Given {context2}, when {action2}, then {result2}.
+
+**DoD**  
+- Tests updated
+- Docs updated
+- Telemetry added`,
+          isDefault: 1,
+        });
+      }
+      
+      res.json({ message: "Default templates initialized successfully" });
+    } catch (error) {
+      console.error("Initialize defaults error:", error);
       res.status(500).json({ message: error instanceof Error ? error.message : 'Unknown error' });
     }
   });

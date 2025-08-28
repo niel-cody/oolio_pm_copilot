@@ -47,6 +47,21 @@ export const groomingSessions = pgTable("grooming_sessions", {
   syncedAt: timestamp("synced_at"),
 });
 
+export const projects = pgTable("projects", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  jiraProjectId: text("jira_project_id").notNull(), // Jira's internal project ID
+  key: text("key").notNull(), // Project key like "PROJ"
+  name: text("name").notNull(),
+  description: text("description"),
+  leadDisplayName: text("lead_display_name"),
+  projectTypeKey: text("project_type_key"), // software, business, etc.
+  avatarUrls: jsonb("avatar_urls"), // Store avatar URLs as JSON
+  issueTypes: jsonb("issue_types"), // Store available issue types as JSON
+  createdAt: timestamp("created_at").defaultNow(),
+  syncedAt: timestamp("synced_at").defaultNow(),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -73,6 +88,12 @@ export const insertGroomingSessionSchema = createInsertSchema(groomingSessions).
   syncedAt: true,
 });
 
+export const insertProjectSchema = createInsertSchema(projects).omit({
+  id: true,
+  createdAt: true,
+  syncedAt: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertJiraConfig = z.infer<typeof insertJiraConfigSchema>;
@@ -83,3 +104,5 @@ export type InsertStoryTemplate = z.infer<typeof insertStoryTemplateSchema>;
 export type StoryTemplate = typeof storyTemplates.$inferSelect;
 export type InsertGroomingSession = z.infer<typeof insertGroomingSessionSchema>;
 export type GroomingSession = typeof groomingSessions.$inferSelect;
+export type InsertProject = z.infer<typeof insertProjectSchema>;
+export type Project = typeof projects.$inferSelect;
