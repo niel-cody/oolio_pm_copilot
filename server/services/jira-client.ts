@@ -10,8 +10,18 @@ export class JiraClient {
     }
     
     this.baseUrl = process.env.JIRA_BASE_URL;
-    const token = Buffer.from(`${process.env.JIRA_EMAIL}:${process.env.JIRA_API_TOKEN}`).toString('base64');
-    this.authHeader = `Basic ${token}`;
+    
+    // Create credentials exactly as per Atlassian docs
+    const credentials = `${process.env.JIRA_EMAIL}:${process.env.JIRA_API_TOKEN}`;
+    const encodedCredentials = Buffer.from(credentials, 'utf8').toString('base64');
+    this.authHeader = `Basic ${encodedCredentials}`;
+    
+    // Debug logging (without exposing credentials)
+    console.log('Jira Client initialized:');
+    console.log('- Base URL:', this.baseUrl);
+    console.log('- Email:', process.env.JIRA_EMAIL);
+    console.log('- API Token length:', process.env.JIRA_API_TOKEN?.length);
+    console.log('- Credentials format check:', credentials.split(':').length === 2 ? 'OK' : 'Invalid');
   }
 
   private async makeRequest(endpoint: string, options: RequestInit = {}) {
@@ -114,76 +124,64 @@ export class JiraClient {
   }
 
   async getProjects(): Promise<JiraProject[]> {
-    // Try multiple approaches to get projects
     try {
-      // Try 1: Basic endpoint with expand parameter
-      console.log('Trying basic /project endpoint with expand...');
-      const basicProjects = await this.makeRequest('/project?expand=description,lead,url,projectKeys');
-      console.log('Basic endpoint with expand returned:', basicProjects?.length || 0, 'projects');
+      // First, test authentication with a simple endpoint
+      console.log('=== Testing Jira Authentication ===');
+      
+      try {
+        const authTest = await this.makeRequest('/myself');
+        console.log('✅ Authentication successful! User:', authTest.displayName);
+      } catch (authError) {
+        console.error('❌ Authentication failed:', authError);
+        throw new Error(`Authentication failed: ${authError}`);
+      }
+      
+      console.log('=== Attempting to fetch projects ===');
+      
+      // Try the most basic project endpoint first
+      console.log('1. Trying basic /project endpoint...');
+      const basicProjects = await this.makeRequest('/project');
+      console.log('Basic projects result:', basicProjects?.length || 0, 'projects found');
       
       if (basicProjects && basicProjects.length > 0) {
         return basicProjects;
       }
       
-      // Try 2: Search endpoint with explicit parameters
-      console.log('Trying /project/search with all statuses...');
-      const searchResult = await this.makeRequest('/project/search?maxResults=100&orderBy=name&action=view&status=live&status=archived&status=deleted');
-      console.log('Search with statuses returned:', searchResult);
+      // Try project search endpoint
+      console.log('2. Trying /project/search endpoint...');
+      const searchResult = await this.makeRequest('/project/search?maxResults=100');
+      console.log('Search result:', searchResult);
       
       if (searchResult?.values && searchResult.values.length > 0) {
         return searchResult.values;
       }
       
-      // Try 3: Search endpoint with minimal parameters
-      console.log('Trying /project/search with minimal params...');
-      const minimalSearch = await this.makeRequest('/project/search?maxResults=100');
-      console.log('Minimal search returned:', minimalSearch);
+      // If direct project access returns 0 but auth works, try getting projects via issue search
+      console.log('3. Auth works but no projects found. Trying issue search workaround...');
+      const issueResult = await this.makeRequest('/search?jql=order by created desc&maxResults=50&fields=project');
       
-      if (minimalSearch?.values && minimalSearch.values.length > 0) {
-        return minimalSearch.values;
-      }
-      
-      // Try 4: Check current user to see basic access
-      console.log('Checking current user info...');
-      const userInfo = await this.makeRequest('/myself');
-      console.log('User info:', JSON.stringify(userInfo, null, 2).substring(0, 300));
-      
-      // Try 5: Check permissions for browsing projects specifically
-      console.log('Checking project browse permissions...');
-      const projectPermissions = await this.makeRequest('/mypermissions?permissions=BROWSE_PROJECTS');
-      console.log('Project permissions:', JSON.stringify(projectPermissions, null, 2));
-      
-      // Try 6: Try the recent projects endpoint (might have different permissions)
-      console.log('Trying recent projects endpoint...');
-      const recentProjects = await this.makeRequest('/project/recent');
-      console.log('Recent projects returned:', recentProjects);
-      
-      if (recentProjects && recentProjects.length > 0) {
-        return recentProjects;
-      }
-      
-      // Try 7: Search for projects using a different approach - via issue search to find project keys
-      console.log('Trying to find projects via issue search...');
-      const issueSearch = await this.makeRequest('/search?jql=ORDER BY created DESC&maxResults=10&fields=project');
-      console.log('Issue search for projects:', issueSearch);
-      
-      // Extract unique projects from issues
-      const projectsFromIssues = [];
-      if (issueSearch?.issues) {
-        const seenProjects = new Set();
-        for (const issue of issueSearch.issues) {
-          if (issue.fields?.project && !seenProjects.has(issue.fields.project.key)) {
-            seenProjects.add(issue.fields.project.key);
-            projectsFromIssues.push(issue.fields.project);
+      if (issueResult?.issues) {
+        const projects = new Map();
+        issueResult.issues.forEach((issue: any) => {
+          if (issue.fields?.project) {
+            const project = issue.fields.project;
+            if (!projects.has(project.key)) {
+              projects.set(project.key, project);
+            }
           }
-        }
-        console.log('Projects found via issue search:', projectsFromIssues.length);
-        if (projectsFromIssues.length > 0) {
-          return projectsFromIssues;
+        });
+        
+        const projectList = Array.from(projects.values());
+        console.log('Found', projectList.length, 'unique projects via issue search');
+        
+        if (projectList.length > 0) {
+          return projectList;
         }
       }
       
+      console.log('No projects found through any method');
       return [];
+      
     } catch (error) {
       console.error('Error in getProjects:', error);
       throw error;
