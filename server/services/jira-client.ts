@@ -1,13 +1,16 @@
 import { JiraIssue, JiraProject, JiraVersion, GroomedEpic, GroomedStory } from "@shared/jira-types";
-import { JiraConfig } from "@shared/schema";
 
 export class JiraClient {
   private baseUrl: string;
   private authHeader: string;
 
-  constructor(config: JiraConfig) {
-    this.baseUrl = config.baseUrl;
-    const token = Buffer.from(`${config.email}:${config.apiToken}`).toString('base64');
+  constructor() {
+    if (!process.env.JIRA_BASE_URL || !process.env.JIRA_EMAIL || !process.env.JIRA_API_TOKEN) {
+      throw new Error('Missing required Jira environment variables: JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN');
+    }
+    
+    this.baseUrl = process.env.JIRA_BASE_URL;
+    const token = Buffer.from(`${process.env.JIRA_EMAIL}:${process.env.JIRA_API_TOKEN}`).toString('base64');
     this.authHeader = `Basic ${token}`;
   }
 

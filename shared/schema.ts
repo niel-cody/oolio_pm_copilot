@@ -9,15 +9,6 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
 });
 
-export const jiraConfigs = pgTable("jira_configs", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull(),
-  baseUrl: text("base_url").notNull(),
-  email: text("email").notNull(),
-  apiToken: text("api_token").notNull(),
-  isCloud: integer("is_cloud").default(1), // 1 for true, 0 for false
-  createdAt: timestamp("created_at").defaultNow(),
-});
 
 export const epicTemplates = pgTable("epic_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -67,10 +58,6 @@ export const insertUserSchema = createInsertSchema(users).pick({
   password: true,
 });
 
-export const insertJiraConfigSchema = createInsertSchema(jiraConfigs).omit({
-  id: true,
-  createdAt: true,
-});
 
 export const insertEpicTemplateSchema = createInsertSchema(epicTemplates).omit({
   id: true,
@@ -96,8 +83,6 @@ export const insertProjectSchema = createInsertSchema(projects).omit({
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
-export type InsertJiraConfig = z.infer<typeof insertJiraConfigSchema>;
-export type JiraConfig = typeof jiraConfigs.$inferSelect;
 export type InsertEpicTemplate = z.infer<typeof insertEpicTemplateSchema>;
 export type EpicTemplate = typeof epicTemplates.$inferSelect;
 export type InsertStoryTemplate = z.infer<typeof insertStoryTemplateSchema>;

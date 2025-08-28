@@ -1,8 +1,7 @@
 import { 
   type User, 
   type InsertUser, 
-  type JiraConfig, 
-  type InsertJiraConfig,
+ 
   type EpicTemplate,
   type InsertEpicTemplate,
   type StoryTemplate,
@@ -12,7 +11,6 @@ import {
   type Project,
   type InsertProject,
   users,
-  jiraConfigs,
   epicTemplates,
   storyTemplates,
   groomingSessions,
@@ -28,10 +26,6 @@ export interface IStorage {
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
 
-  // Jira Config
-  getJiraConfig(userId: string): Promise<JiraConfig | undefined>;
-  createJiraConfig(config: InsertJiraConfig): Promise<JiraConfig>;
-  updateJiraConfig(userId: string, config: Partial<InsertJiraConfig>): Promise<JiraConfig | undefined>;
 
   // Templates
   getEpicTemplates(userId: string): Promise<EpicTemplate[]>;
@@ -60,7 +54,6 @@ export interface IStorage {
 
 export class MemStorage implements IStorage {
   private users: Map<string, User>;
-  private jiraConfigs: Map<string, JiraConfig>;
   private epicTemplates: Map<string, EpicTemplate>;
   private storyTemplates: Map<string, StoryTemplate>;
   private groomingSessions: Map<string, GroomingSession>;
@@ -68,7 +61,6 @@ export class MemStorage implements IStorage {
 
   constructor() {
     this.users = new Map();
-    this.jiraConfigs = new Map();
     this.epicTemplates = new Map();
     this.storyTemplates = new Map();
     this.groomingSessions = new Map();
@@ -151,33 +143,6 @@ As a {persona}, I want {capability} so that {outcome}.
     return user;
   }
 
-  // Jira Config methods
-  async getJiraConfig(userId: string): Promise<JiraConfig | undefined> {
-    return Array.from(this.jiraConfigs.values()).find(
-      (config) => config.userId === userId,
-    );
-  }
-
-  async createJiraConfig(config: InsertJiraConfig): Promise<JiraConfig> {
-    const id = randomUUID();
-    const jiraConfig: JiraConfig = { 
-      ...config, 
-      id, 
-      isCloud: config.isCloud ?? 1,
-      createdAt: new Date() 
-    };
-    this.jiraConfigs.set(id, jiraConfig);
-    return jiraConfig;
-  }
-
-  async updateJiraConfig(userId: string, config: Partial<InsertJiraConfig>): Promise<JiraConfig | undefined> {
-    const existing = await this.getJiraConfig(userId);
-    if (!existing) return undefined;
-    
-    const updated: JiraConfig = { ...existing, ...config };
-    this.jiraConfigs.set(existing.id, updated);
-    return updated;
-  }
 
   // Epic Template methods
   async getEpicTemplates(userId: string): Promise<EpicTemplate[]> {
@@ -365,28 +330,6 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  // Jira Config methods
-  async getJiraConfig(userId: string): Promise<JiraConfig | undefined> {
-    const [config] = await db.select().from(jiraConfigs).where(eq(jiraConfigs.userId, userId));
-    return config || undefined;
-  }
-
-  async createJiraConfig(config: InsertJiraConfig): Promise<JiraConfig> {
-    const [jiraConfig] = await db
-      .insert(jiraConfigs)
-      .values(config)
-      .returning();
-    return jiraConfig;
-  }
-
-  async updateJiraConfig(userId: string, config: Partial<InsertJiraConfig>): Promise<JiraConfig | undefined> {
-    const [updated] = await db
-      .update(jiraConfigs)
-      .set(config)
-      .where(eq(jiraConfigs.userId, userId))
-      .returning();
-    return updated || undefined;
-  }
 
   // Epic Template methods
   async getEpicTemplates(userId: string): Promise<EpicTemplate[]> {

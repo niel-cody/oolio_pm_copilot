@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { JiraClient } from "./services/jira-client";
 import { OpenAIService } from "./services/openai-service";
 import { z } from "zod";
-import { insertJiraConfigSchema, insertEpicTemplateSchema, insertStoryTemplateSchema, insertGroomingSessionSchema } from "@shared/schema";
+import { insertEpicTemplateSchema, insertStoryTemplateSchema, insertGroomingSessionSchema } from "@shared/schema";
 import { GroomingRequest, DashboardStats } from "@shared/jira-types";
 
 // Mock user ID for development (in production, use proper auth)
@@ -21,12 +21,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "JQL query is required" });
       }
 
-      const jiraConfig = await storage.getJiraConfig(MOCK_USER_ID);
-      if (!jiraConfig) {
-        return res.status(400).json({ message: "Jira configuration not found. Please configure Jira settings." });
-      }
-
-      const client = new JiraClient(jiraConfig);
+      const client = new JiraClient();
       const issues = await client.searchIssues(jql, fields);
       
       res.json(issues);
@@ -45,12 +40,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Project key is required" });
       }
 
-      const jiraConfig = await storage.getJiraConfig(MOCK_USER_ID);
-      if (!jiraConfig) {
-        return res.status(400).json({ message: "Jira configuration not found" });
-      }
-
-      const client = new JiraClient(jiraConfig);
+      const client = new JiraClient();
       const ideas = await client.getIdeasToGroom(projectKey);
       
       res.json(ideas);
@@ -69,12 +59,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Issue fields are required" });
       }
 
-      const jiraConfig = await storage.getJiraConfig(MOCK_USER_ID);
-      if (!jiraConfig) {
-        return res.status(400).json({ message: "Jira configuration not found" });
-      }
-
-      const client = new JiraClient(jiraConfig);
+      const client = new JiraClient();
       const issue = await client.createIssue(fields);
       
       res.json(issue);
@@ -93,12 +78,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Both issue keys are required" });
       }
 
-      const jiraConfig = await storage.getJiraConfig(MOCK_USER_ID);
-      if (!jiraConfig) {
-        return res.status(400).json({ message: "Jira configuration not found" });
-      }
-
-      const client = new JiraClient(jiraConfig);
+      const client = new JiraClient();
       await client.linkIssues(inwardKey, outwardKey, typeName || 'Blocks');
       
       res.json({ success: true });
@@ -117,12 +97,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Project key and version name are required" });
       }
 
-      const jiraConfig = await storage.getJiraConfig(MOCK_USER_ID);
-      if (!jiraConfig) {
-        return res.status(400).json({ message: "Jira configuration not found" });
-      }
-
-      const client = new JiraClient(jiraConfig);
+      const client = new JiraClient();
       const issues = await client.getVersionIssues(projectKey, versionName, jqlExtras);
       
       res.json(issues);
@@ -135,12 +110,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get projects (direct from Jira)
   app.get("/api/jira/projects", async (req, res) => {
     try {
-      const jiraConfig = await storage.getJiraConfig(MOCK_USER_ID);
-      if (!jiraConfig) {
-        return res.status(400).json({ message: "Jira configuration not found" });
-      }
-
-      const client = new JiraClient(jiraConfig);
+      const client = new JiraClient();
       const projects = await client.getProjects();
       
       res.json(projects);
@@ -164,12 +134,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Sync projects from Jira to database
   app.post("/api/projects/sync", async (req, res) => {
     try {
-      const jiraConfig = await storage.getJiraConfig(MOCK_USER_ID);
-      if (!jiraConfig) {
-        return res.status(400).json({ message: "Jira configuration not found" });
-      }
-
-      const client = new JiraClient(jiraConfig);
+      const client = new JiraClient();
       const jiraProjects = await client.getProjects();
       
       // Sync projects to database
@@ -190,12 +155,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { projectKey } = req.params;
 
-      const jiraConfig = await storage.getJiraConfig(MOCK_USER_ID);
-      if (!jiraConfig) {
-        return res.status(400).json({ message: "Jira configuration not found" });
-      }
-
-      const client = new JiraClient(jiraConfig);
+      const client = new JiraClient();
       const versions = await client.getVersions(projectKey);
       
       res.json(versions);
@@ -336,8 +296,8 @@ As a {persona}, I want {capability} so that {outcome}.
   // Dashboard stats
   app.get("/api/dashboard/stats", async (req, res) => {
     try {
-      const jiraConfig = await storage.getJiraConfig(MOCK_USER_ID);
-      if (!jiraConfig) {
+      // Check if Jira env vars are configured
+      if (!process.env.JIRA_BASE_URL || !process.env.JIRA_EMAIL || !process.env.JIRA_API_TOKEN) {
         return res.json({
           ideasToGroom: 0,
           epicsCreated: 0,
@@ -362,50 +322,6 @@ As a {persona}, I want {capability} so that {outcome}.
     }
   });
 
-  // Jira Configuration endpoints
-  app.get("/api/config/jira", async (req, res) => {
-    try {
-      const config = await storage.getJiraConfig(MOCK_USER_ID);
-      if (!config) {
-        return res.status(404).json({ message: "Jira configuration not found" });
-      }
-      
-      // Don't return the API token for security
-      const { apiToken, ...safeConfig } = config;
-      res.json(safeConfig);
-    } catch (error) {
-      console.error("Get Jira config error:", error);
-      res.status(500).json({ message: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
-
-  app.post("/api/config/jira", async (req, res) => {
-    try {
-      const validatedData = insertJiraConfigSchema.parse({
-        ...req.body,
-        userId: MOCK_USER_ID
-      });
-
-      const existing = await storage.getJiraConfig(MOCK_USER_ID);
-      let config;
-      
-      if (existing) {
-        config = await storage.updateJiraConfig(MOCK_USER_ID, validatedData);
-      } else {
-        config = await storage.createJiraConfig(validatedData);
-      }
-
-      if (!config) {
-        return res.status(500).json({ message: "Failed to save configuration" });
-      }
-
-      const { apiToken, ...safeConfig } = config;
-      res.json(safeConfig);
-    } catch (error) {
-      console.error("Save Jira config error:", error);
-      res.status(400).json({ message: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
 
   // Template endpoints
   app.get("/api/templates/epic", async (req, res) => {

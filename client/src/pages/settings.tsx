@@ -1,40 +1,28 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { useToast } from "@/hooks/use-toast";
-import { insertJiraConfigSchema, insertEpicTemplateSchema, insertStoryTemplateSchema, type JiraConfig, type EpicTemplate, type StoryTemplate } from "@shared/schema";
+import { insertEpicTemplateSchema, insertStoryTemplateSchema, type EpicTemplate, type StoryTemplate } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { z } from "zod";
 
-const jiraConfigFormSchema = insertJiraConfigSchema.omit({ userId: true });
 const epicTemplateFormSchema = insertEpicTemplateSchema.omit({ userId: true, isDefault: true });
 const storyTemplateFormSchema = insertStoryTemplateSchema.omit({ userId: true, isDefault: true });
 
-type JiraConfigFormData = z.infer<typeof jiraConfigFormSchema>;
 type EpicTemplateFormData = z.infer<typeof epicTemplateFormSchema>;
 type StoryTemplateFormData = z.infer<typeof storyTemplateFormSchema>;
 
 export default function Settings() {
-  const [testingConnection, setTestingConnection] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Jira Configuration
-  const { data: jiraConfig, isLoading: jiraConfigLoading } = useQuery<Partial<JiraConfig>>({
-    queryKey: ['/api/config/jira'],
-    retry: false,
-  });
 
   const { data: epicTemplates } = useQuery<EpicTemplate[]>({
     queryKey: ['/api/templates/epic'],
@@ -45,27 +33,6 @@ export default function Settings() {
   });
 
   // Forms
-  const jiraForm = useForm<JiraConfigFormData>({
-    resolver: zodResolver(jiraConfigFormSchema),
-    defaultValues: {
-      baseUrl: "",
-      email: "",
-      apiToken: "",
-      isCloud: 1,
-    },
-  });
-
-  // Update form when jiraConfig data loads
-  useEffect(() => {
-    if (jiraConfig) {
-      jiraForm.reset({
-        baseUrl: jiraConfig.baseUrl || "",
-        email: jiraConfig.email || "",
-        apiToken: jiraConfig.apiToken || "",
-        isCloud: jiraConfig.isCloud || 1,
-      });
-    }
-  }, [jiraConfig, jiraForm]);
 
   const epicTemplateForm = useForm<EpicTemplateFormData>({
     resolver: zodResolver(epicTemplateFormSchema),
@@ -112,51 +79,6 @@ As a {persona}, I want {capability} so that {outcome}.
   });
 
   // Mutations
-  const saveJiraConfigMutation = useMutation({
-    mutationFn: async (data: JiraConfigFormData) => {
-      const response = await apiRequest('POST', '/api/config/jira', data);
-      return response.json();
-    },
-    onSuccess: () => {
-      toast({
-        title: "Configuration Saved",
-        description: "Jira configuration has been saved successfully.",
-      });
-      queryClient.invalidateQueries({ queryKey: ['/api/config/jira'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/jira/projects'] });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Save Failed",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
-  const testJiraConnectionMutation = useMutation({
-    mutationFn: async () => {
-      setTestingConnection(true);
-      const response = await apiRequest('GET', '/api/jira/projects');
-      return response.json();
-    },
-    onSuccess: (projects) => {
-      toast({
-        title: "Connection Successful",
-        description: `Connected successfully. Found ${projects.length} projects.`,
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Connection Failed",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-    onSettled: () => {
-      setTestingConnection(false);
-    },
-  });
 
   const createEpicTemplateMutation = useMutation({
     mutationFn: async (data: EpicTemplateFormData) => {
@@ -202,9 +124,6 @@ As a {persona}, I want {capability} so that {outcome}.
     },
   });
 
-  const onJiraConfigSubmit = (data: JiraConfigFormData) => {
-    saveJiraConfigMutation.mutate(data);
-  };
 
   const onEpicTemplateSubmit = (data: EpicTemplateFormData) => {
     createEpicTemplateMutation.mutate(data);
@@ -238,142 +157,34 @@ As a {persona}, I want {capability} so that {outcome}.
               <CardHeader>
                 <CardTitle>Jira Configuration</CardTitle>
                 <CardDescription>
-                  Connect to your Jira instance using Personal Access Token authentication
+                  Jira configuration is managed through environment variables for security
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Form {...jiraForm}>
-                  <form onSubmit={jiraForm.handleSubmit(onJiraConfigSubmit)} className="space-y-4">
-                    <FormField
-                      control={jiraForm.control}
-                      name="baseUrl"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Jira Base URL</FormLabel>
-                          <FormControl>
-                            <Input 
-                              placeholder="https://your-domain.atlassian.net" 
-                              {...field}
-                              data-testid="input-jira-base-url"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={jiraForm.control}
-                      name="email"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Email Address</FormLabel>
-                          <FormControl>
-                            <Input 
-                              type="email"
-                              placeholder="your-email@company.com" 
-                              {...field}
-                              data-testid="input-jira-email"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={jiraForm.control}
-                      name="apiToken"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>API Token</FormLabel>
-                          <FormControl>
-                            <Input 
-                              type="password"
-                              placeholder="Your Jira API token" 
-                              {...field}
-                              data-testid="input-jira-token"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={jiraForm.control}
-                      name="isCloud"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                          <div className="space-y-0.5">
-                            <FormLabel className="text-base">Jira Cloud</FormLabel>
-                            <div className="text-sm text-muted-foreground">
-                              Enable if using Jira Cloud (atlassian.net)
-                            </div>
-                          </div>
-                          <FormControl>
-                            <Switch
-                              checked={field.value === 1}
-                              onCheckedChange={(checked) => field.onChange(checked ? 1 : 0)}
-                              data-testid="switch-jira-cloud"
-                            />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
-
-                    <div className="flex gap-2 pt-4">
-                      <Button 
-                        type="submit"
-                        disabled={saveJiraConfigMutation.isPending}
-                        data-testid="button-save-jira-config"
-                      >
-                        {saveJiraConfigMutation.isPending ? (
-                          <>
-                            <i className="fas fa-spinner fa-spin mr-2"></i>
-                            Saving...
-                          </>
-                        ) : (
-                          <>
-                            <i className="fas fa-save mr-2"></i>
-                            Save Configuration
-                          </>
-                        )}
-                      </Button>
-                      
-                      <Button 
-                        type="button"
-                        variant="outline"
-                        onClick={() => testJiraConnectionMutation.mutate()}
-                        disabled={testingConnection || !jiraConfig?.baseUrl}
-                        data-testid="button-test-connection"
-                      >
-                        {testingConnection ? (
-                          <>
-                            <i className="fas fa-spinner fa-spin mr-2"></i>
-                            Testing...
-                          </>
-                        ) : (
-                          <>
-                            <i className="fas fa-plug mr-2"></i>
-                            Test Connection
-                          </>
-                        )}
-                      </Button>
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 p-4 rounded-lg bg-accent/30 border border-border">
+                    <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center">
+                      <i className="fas fa-cog text-primary-foreground text-sm"></i>
                     </div>
-                  </form>
-                </Form>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-foreground">Environment Configuration</p>
+                      <p className="text-xs text-muted-foreground">
+                        Configuration is now managed via server environment variables
+                      </p>
+                    </div>
+                  </div>
 
-                <Separator className="my-6" />
-
-                <Alert>
-                  <i className="fas fa-info-circle"></i>
-                  <AlertDescription>
-                    To get your Jira API token, go to your Atlassian Account Settings → Security → 
-                    Create and manage API tokens. Make sure your account has the necessary permissions 
-                    to read and create issues in your projects.
-                  </AlertDescription>
-                </Alert>
+                  <Alert>
+                    <i className="fas fa-info-circle"></i>
+                    <AlertDescription>
+                      Set the following environment variables in your Replit Secrets or server:
+                      <br />• JIRA_BASE_URL (e.g., https://your-domain.atlassian.net)
+                      <br />• JIRA_EMAIL (your Atlassian email address)
+                      <br />• JIRA_API_TOKEN (from Account Settings → Security → API tokens)
+                      <br />• JIRA_IS_CLOUD=true (for Jira Cloud instances)
+                    </AlertDescription>
+                  </Alert>
+                </div>
               </CardContent>
             </Card>
 
