@@ -21,7 +21,11 @@ export class JiraClient {
     console.log('- Base URL:', this.baseUrl);
     console.log('- Email:', process.env.JIRA_EMAIL);
     console.log('- API Token length:', process.env.JIRA_API_TOKEN?.length);
+    console.log('- API Token starts with:', process.env.JIRA_API_TOKEN?.substring(0, 10) + '...');
+    console.log('- API Token ends with:', '...' + process.env.JIRA_API_TOKEN?.substring(-10));
     console.log('- Credentials format check:', credentials.split(':').length === 2 ? 'OK' : 'Invalid');
+    console.log('- Auth header length:', this.authHeader.length);
+    console.log('- Auth header starts with:', this.authHeader.substring(0, 20) + '...');
   }
 
   private async makeRequest(endpoint: string, options: RequestInit = {}) {

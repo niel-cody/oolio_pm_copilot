@@ -121,6 +121,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Debug endpoint to test Jira connection
+  app.get("/api/jira/debug", async (req, res) => {
+    try {
+      // Manual test of exact same auth format
+      const email = process.env.JIRA_EMAIL;
+      const token = process.env.JIRA_API_TOKEN;
+      const credentials = `${email}:${token}`;
+      const encoded = Buffer.from(credentials).toString('base64');
+      
+      console.log('=== Manual Auth Test ===');
+      console.log('Email:', email);
+      console.log('Token length:', token?.length);
+      console.log('Encoded length:', encoded.length);
+      
+      const response = await fetch(`${process.env.JIRA_BASE_URL}/rest/api/3/myself`, {
+        headers: {
+          'Authorization': `Basic ${encoded}`,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log('Manual fetch status:', response.status);
+      console.log('Manual fetch headers:', Object.fromEntries(response.headers.entries()));
+      
+      if (response.ok) {
+        const data = await response.json();
+        res.json({ success: true, user: data.displayName, accountId: data.accountId });
+      } else {
+        const errorText = await response.text();
+        console.log('Manual fetch error body:', errorText);
+        res.status(500).json({ 
+          success: false, 
+          status: response.status, 
+          error: errorText,
+          authHeaderPreview: `Basic ${encoded.substring(0, 20)}...`
+        });
+      }
+    } catch (error) {
+      console.error("Debug test error:", error);
+      res.status(500).json({ message: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
   // Get synced projects from database
   app.get("/api/projects", async (req, res) => {
     try {

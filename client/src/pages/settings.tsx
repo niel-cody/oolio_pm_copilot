@@ -220,6 +220,29 @@ As a {persona}, I want {capability} so that {outcome}.
                     <Button 
                       onClick={async () => {
                         try {
+                          const response = await fetch('/api/jira/debug');
+                          const result = await response.json();
+                          console.log('Debug test result:', result);
+                          if (result.success) {
+                            alert(`✅ Authentication SUCCESS!\nUser: ${result.user}\nAccount ID: ${result.accountId}`);
+                          } else {
+                            alert(`❌ Authentication FAILED!\nStatus: ${result.status}\nError: ${result.error}`);
+                          }
+                        } catch (error) {
+                          console.error('Debug test failed:', error);
+                          alert('Debug test failed. Check console for details.');
+                        }
+                      }}
+                      variant="outline"
+                      data-testid="button-debug-auth"
+                    >
+                      <i className="fas fa-bug mr-2"></i>
+                      Debug Auth
+                    </Button>
+                    
+                    <Button 
+                      onClick={async () => {
+                        try {
                           const response = await fetch('/api/jira/projects');
                           const projects = await response.json();
                           console.log('Direct Jira projects:', projects);
