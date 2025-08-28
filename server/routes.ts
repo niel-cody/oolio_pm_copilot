@@ -113,6 +113,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const client = new JiraClient();
       const projects = await client.getProjects();
       
+      console.log(`Direct Jira API returned ${projects.length} projects:`, projects.map(p => ({ key: p.key, name: p.name })));
       res.json(projects);
     } catch (error) {
       console.error("Get projects error:", error);
@@ -137,12 +138,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const client = new JiraClient();
       const jiraProjects = await client.getProjects();
       
+      console.log(`Retrieved ${jiraProjects.length} projects from Jira:`, jiraProjects.map(p => ({ key: p.key, name: p.name })));
+      
       // Sync projects to database
       const syncedProjects = await storage.syncProjects(MOCK_USER_ID, jiraProjects);
       
       res.json({ 
         message: `Synced ${syncedProjects.length} projects successfully`,
-        projects: syncedProjects
+        projects: syncedProjects,
+        jiraProjectCount: jiraProjects.length
       });
     } catch (error) {
       console.error("Sync projects error:", error);

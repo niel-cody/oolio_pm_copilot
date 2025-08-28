@@ -216,14 +216,33 @@ As a {persona}, I want {capability} so that {outcome}.
                     </p>
                   </div>
 
-                  <div className="flex gap-3">
+                  <div className="flex gap-3 flex-wrap">
+                    <Button 
+                      onClick={async () => {
+                        try {
+                          const response = await fetch('/api/jira/projects');
+                          const projects = await response.json();
+                          console.log('Direct Jira projects:', projects);
+                          alert(`Found ${projects.length} projects directly from Jira:\n${projects.map((p: any) => `${p.key}: ${p.name}`).slice(0, 5).join('\n')}`);
+                        } catch (error) {
+                          console.error('Jira test failed:', error);
+                          alert('Failed to fetch projects from Jira. Check console for details.');
+                        }
+                      }}
+                      variant="outline"
+                      data-testid="button-test-jira"
+                    >
+                      <i className="fas fa-plug mr-2"></i>
+                      Test Jira Connection
+                    </Button>
+                    
                     <Button 
                       onClick={async () => {
                         try {
                           const response = await fetch('/api/projects/sync', { method: 'POST' });
                           const data = await response.json();
                           console.log('Projects synced:', data);
-                          alert(`${data.message || 'Projects synced successfully!'}`);
+                          alert(`${data.message || 'Projects synced successfully!'}\nJira returned: ${data.jiraProjectCount || 'unknown'} projects`);
                         } catch (error) {
                           console.error('Sync failed:', error);
                           alert('Failed to sync projects. Please check your Jira configuration.');
@@ -242,7 +261,7 @@ As a {persona}, I want {capability} so that {outcome}.
                           const response = await fetch('/api/projects');
                           const projects = await response.json();
                           console.log('Stored projects:', projects);
-                          alert(`Found ${projects.length} projects in local database`);
+                          alert(`Found ${projects.length} projects in local database${projects.length > 0 ? ':\n' + projects.map((p: any) => `${p.key}: ${p.name}`).slice(0, 5).join('\n') : ''}`);
                         } catch (error) {
                           console.error('Failed to fetch projects:', error);
                           alert('Failed to fetch stored projects');
