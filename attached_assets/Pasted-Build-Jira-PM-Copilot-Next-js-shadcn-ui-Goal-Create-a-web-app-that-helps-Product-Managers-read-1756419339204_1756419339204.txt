@@ -1,0 +1,223 @@
+Build: Jira PM Copilot (Next.js + shadcn/ui)
+Goal
+Create a web app that helps Product Managers:
+read ideas/issues from Jira,
+groom & transform them into Epics/Stories with structured templates,
+write updates back to Jira, and
+fetch all work items in a Version to auto-generate Release Notes.
+Tech
+Framework: Next.js 14 (App Router, TypeScript)
+UI: Tailwind CSS + shadcn/ui (radix-based)
+Auth to Jira: Personal Access Token (Cloud) via basic auth header or OAuth 3LO (configurable)
+Server: Next.js Route Handlers (/app/api/*)
+State/Data: React Query (TanStack Query)
+Env: JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN, JIRA_CLOUD=true (or OAuth vars)
+Optional AI assist (for grooming text → story templates): add OPENAI_API_KEY
+Core Features & Flows
+1) Idea Intake & Grooming
+Pull “ideas” from a configurable Jira project/issue type (e.g., Idea, Task, Story in a specific status/category).
+Surface each idea in a review queue with:
+Summary, Description, Labels, Components, Reporter, Links.
+Grooming Assistant: AI-assisted transform into Epic or Story with:
+Epic template: Problem, Hypothesis, Scope, Non-Goals, KPIs, Acceptance Criteria.
+Story template: As a [persona], I want [capability] so that [outcome]. + ACs + Definition of Done.
+One-click: Create Epic and/or Create Stories in Jira (linked to the Epic).
+2) Epic & Story Writer (Write-Back)
+Create issues via Jira REST API:
+POST /rest/api/3/issue
+Link stories to epic (EPIC LINK or parent field depending on company-managed vs team-managed).
+Update fields: labels, components, fixVersion(s), assignee, story points, etc.
+Bulk actions: batch create stories from a multi-story draft table.
+3) Version Explorer
+Search all issues by Version (fixVersion):
+JQL sample:
+project = "<KEY>" AND fixVersion = "<VERSION_NAME>" ORDER BY priority DESC, updated DESC
+Filter by type, status, component, label.
+Export the set and Generate Release Notes.
+4) Release Notes Generator
+Group issues by type (Epics, Stories, Bugs, Tasks) and component.
+Output formats:
+Concise (stakeholder email / Atlas post, ≤ 280 chars option)
+Detailed (Confluence/blog/Slack)
+Include sections:
+📦 What, 🎯 Why, 🚀 Highlights, 🐞 Fixes, ⚠️ Known Limitations, 🔭 What’s Next.
+Copy-to-clipboard & “Write to Jira Version description” (if permissions allow).
+UI (shadcn/ui) Requirements
+Use shadcn components (install and import via CLI). Aim for clean, Apple-like minimal design.
+Pages:
+/ Dashboard
+Cards: “Ideas to Groom”, “Epics Created This Week”, “Stories Created”, “Pending Write-Backs”.
+/ideas Grooming Queue
+DataTable (filter/search), Row click → Sheet with idea detail.
+Actions: “Draft Epic”, “Draft Story”, “Bulk Generate Stories”.
+/writer Epic & Story Writer
+Tabs: Epic Draft, Story Drafts, Bulk Create.
+Form (with zod validation) + Preview pane.
+Toast on create/update success.
+/versions Version Explorer
+Inputs: Project, Version (autocomplete), Filters.
+Results table + Generate Release Notes button → Dialog preview with format options.
+/settings
+Jira config (base URL, PAT/OAuth).
+Templates editor (Epic & Story), Release Notes style presets.
+AI toggle + model settings.
+Components to use: Card, Button, DropdownMenu, Dialog, Sheet, Tabs, Textarea, Input, Select, Badge, Toast, Table, Alert, Separator, Form, Skeleton.
+Data & Types (TypeScript)
+Create a /lib/jira/types.ts with the minimal shapes you use:
+export type JiraIssue = {
+  id: string;
+  key: string;
+  fields: {
+    summary: string;
+    description?: string;
+    issuetype: { id: string; name: string };
+    project: { id: string; key: string; name: string };
+    fixVersions?: { id: string; name: string }[];
+    labels?: string[];
+    components?: { id: string; name: string }[];
+    status?: { id: string; name: string };
+    parent?: { key: string; id: string };
+    customfield_epicLink?: string; // epic link field key varies
+  };
+};
+
+export type GroomedEpic = {
+  summary: string;
+  description: string; // markdown
+  labels?: string[];
+  components?: string[];
+  kpis?: string[];
+  acceptanceCriteria: string[];
+};
+
+export type GroomedStory = {
+  summary: string; // “As a … I want … so that …”
+  description: string; // markdown
+  acceptanceCriteria: string[]; // “Given/When/Then…”
+  storyPoints?: number;
+  labels?: string[];
+  components?: string[];
+  parentEpicKey?: string;
+};
+API Routes
+Implement Next.js route handlers under /app/api.
+POST /api/jira/search
+body: { jql: string, fields?: string[] }
+returns: JiraIssue[]
+POST /api/jira/create-issue
+body: { fields: Record<string, any> }
+returns: created issue payload
+POST /api/jira/link-issue
+body: { inwardKey: string, outwardKey: string, typeName: string }
+POST /api/jira/version-issues
+body: { projectKey: string, versionName: string, jqlExtras?: string }
+POST /api/release-notes
+body: { issues: JiraIssue[], style: "concise" | "detailed", includeSections?: string[] }
+returns: { markdown: string, text: string }
+Jira client helper (/lib/jira/client.ts):
+Build auth header:
+const token = Buffer.from(`${process.env.JIRA_EMAIL}:${process.env.JIRA_API_TOKEN}`).toString('base64');
+headers.Authorization = `Basic ${token}`;
+Base URL: https://<your-domain>.atlassian.net
+Common JQLs
+Ideas: project = KEY AND issuetype = Idea AND statusCategory = "To Do"
+By version: project = KEY AND fixVersion = "VERSION"
+Epics this week: project = KEY AND issuetype = Epic AND updated >= -7d
+Templates (Editable in /settings)
+Epic (Markdown)
+# Problem
+{problem}
+
+# Hypothesis
+{hypothesis}
+
+# Scope
+{scope}
+
+# Non-Goals
+{non_goals}
+
+# KPIs / Success
+- {kpi_1}
+- {kpi_2}
+
+# Acceptance Criteria
+- {ac_1}
+- {ac_2}
+Story (Markdown)
+**User Story**  
+As a {persona}, I want {capability} so that {outcome}.
+
+**Acceptance Criteria**  
+- Given {context}, when {action}, then {result}.
+- Given {context2}, when {action2}, then {result2}.
+
+**DoD**  
+- Tests updated
+- Docs updated
+- Telemetry added
+Release Notes (Detailed)
+📦 What
+{what}
+
+🎯 Why
+{why}
+
+🚀 Highlights
+{highlights_list}
+
+🐞 Fixes
+{fixes_list}
+
+⚠️ Known Limitations
+{limits_list}
+
+🔭 What’s Next
+{next_list}
+Security & Config
+Never send secrets to the client. All Jira calls go through server routes.
+Rate-limit server routes.
+Validate inputs with zod.
+Handle 401/403 gracefully with a setup wizard in /settings.
+.env (example)
+JIRA_BASE_URL=https://your-domain.atlassian.net
+JIRA_EMAIL=you@example.com
+JIRA_API_TOKEN=xxxx
+JIRA_CLOUD=true
+OPENAI_API_KEY=optional
+AI Grooming (optional)
+If OPENAI_API_KEY present:
+POST /api/groom/epic → takes idea text and returns a GroomedEpic.
+POST /api/groom/story → returns GroomedStory[] (allow N stories).
+Prompt the model to keep fielded structure, no extra prose.
+Implementation Steps (Replit Tasks)
+Scaffold
+npx create-next-app@latest jira-pm-copilot --ts --eslint --app
+Add Tailwind; install and init shadcn/ui; add React Query.
+Design System
+Configure Tailwind tokens; install shadcn components used above.
+Jira Client
+/lib/jira/client.ts, /lib/jira/types.ts, auth + fetch helpers.
+API Routes
+Build the 5 routes listed; add zod validation + error handling.
+Pages
+/ideas, /writer, /versions, /settings, dashboard /.
+Grooming UI
+Idea detail Sheet with “Draft Epic / Draft Stories” forms + Preview.
+Write-Back
+Implement create issue + link/parent logic (epic → stories).
+Version Explorer
+JQL search by version; table; “Generate Release Notes” dialog.
+Release Notes
+Markdown generator + copy buttons; optional write to Jira Version description.
+Hardening
+Loading states, empty states, toasts, error boundaries, skeletons.
+Docs
+Add a README with env setup, permissions needed, and Jira scopes.
+Definition of Done
+Can read ideas from Jira and display a groom queue.
+Can draft an Epic + multiple Stories and create them in Jira with correct links.
+Can fetch all issues for a given Version and generate release notes (concise & detailed) in-app.
+All API calls are server-side, secrets not exposed.
+UI uses shadcn/ui, responsive, accessible, with optimistic updates and toasts.
+Settings page lets PMs change templates without redeploying.
