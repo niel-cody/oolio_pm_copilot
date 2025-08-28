@@ -364,6 +364,73 @@ As a {persona}, I want {capability} so that {outcome}.
                 </Alert>
               </CardContent>
             </Card>
+
+            <Card data-testid="card-project-sync">
+              <CardHeader>
+                <CardTitle>Project Synchronization</CardTitle>
+                <CardDescription>Sync your Jira projects to the local database for better performance</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 p-4 rounded-lg bg-accent/30 border border-border">
+                    <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center">
+                      <i className="fas fa-database text-primary-foreground text-sm"></i>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-foreground">Local Project Storage</p>
+                      <p className="text-xs text-muted-foreground">
+                        Store project information locally for faster loading and better performance
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      Sync your Jira projects to improve app performance and enable features like faster project selection, offline access, and better caching.
+                    </p>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <Button 
+                      onClick={async () => {
+                        try {
+                          const response = await fetch('/api/projects/sync', { method: 'POST' });
+                          const data = await response.json();
+                          console.log('Projects synced:', data);
+                          alert(`${data.message || 'Projects synced successfully!'}`);
+                        } catch (error) {
+                          console.error('Sync failed:', error);
+                          alert('Failed to sync projects. Please check your Jira configuration.');
+                        }
+                      }}
+                      data-testid="button-sync-projects"
+                    >
+                      <i className="fas fa-sync mr-2"></i>
+                      Sync Projects
+                    </Button>
+                    
+                    <Button 
+                      variant="outline"
+                      onClick={async () => {
+                        try {
+                          const response = await fetch('/api/projects');
+                          const projects = await response.json();
+                          console.log('Stored projects:', projects);
+                          alert(`Found ${projects.length} projects in local database`);
+                        } catch (error) {
+                          console.error('Failed to fetch projects:', error);
+                          alert('Failed to fetch stored projects');
+                        }
+                      }}
+                      data-testid="button-view-stored-projects"
+                    >
+                      <i className="fas fa-eye mr-2"></i>
+                      View Stored
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="epic-templates" className="space-y-6">
