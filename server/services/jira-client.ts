@@ -17,6 +17,8 @@ export class JiraClient {
   private async makeRequest(endpoint: string, options: RequestInit = {}) {
     const url = `${this.baseUrl}/rest/api/3${endpoint}`;
     
+    console.log(`Making Jira API request to: ${url}`);
+    
     const response = await fetch(url, {
       ...options,
       headers: {
@@ -29,10 +31,13 @@ export class JiraClient {
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.error(`Jira API error (${response.status}): ${errorText}`);
       throw new Error(`Jira API error (${response.status}): ${errorText}`);
     }
 
-    return response.json();
+    const result = await response.json();
+    console.log(`API response for ${endpoint}:`, JSON.stringify(result, null, 2).substring(0, 500));
+    return result;
   }
 
   async searchIssues(jql: string, fields?: string[]): Promise<JiraIssue[]> {
@@ -109,7 +114,25 @@ export class JiraClient {
   }
 
   async getProjects(): Promise<JiraProject[]> {
-    return this.makeRequest('/project');
+    // Try the basic endpoint first
+    try {
+      const projects = await this.makeRequest('/project');
+      console.log('Basic /project endpoint returned:', projects?.length || 0, 'projects');
+      
+      if (projects && projects.length > 0) {
+        return projects;
+      }
+      
+      // If no projects from basic endpoint, try search endpoint with more permissive parameters
+      console.log('Trying /project/search endpoint...');
+      const searchResult = await this.makeRequest('/project/search?maxResults=50');
+      console.log('Search endpoint returned:', searchResult);
+      
+      return searchResult?.values || [];
+    } catch (error) {
+      console.error('Error in getProjects:', error);
+      throw error;
+    }
   }
 
   async getVersions(projectKey: string): Promise<JiraVersion[]> {
