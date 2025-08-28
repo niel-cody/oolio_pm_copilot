@@ -143,17 +143,47 @@ export class JiraClient {
         return minimalSearch.values;
       }
       
-      // Try 4: My permissions endpoint to see what the user can access
-      console.log('Checking user permissions...');
-      const permissions = await this.makeRequest('/mypermissions');
-      console.log('User permissions:', JSON.stringify(permissions, null, 2));
+      // Try 4: Check current user to see basic access
+      console.log('Checking current user info...');
+      const userInfo = await this.makeRequest('/myself');
+      console.log('User info:', JSON.stringify(userInfo, null, 2).substring(0, 300));
       
-      // Try 5: Get user info to see what projects they can see
-      console.log('Trying /project/search with typeKey parameter...');
-      const typeSearch = await this.makeRequest('/project/search?typeKey=software&typeKey=business&maxResults=100');
-      console.log('Type-based search returned:', typeSearch);
+      // Try 5: Check permissions for browsing projects specifically
+      console.log('Checking project browse permissions...');
+      const projectPermissions = await this.makeRequest('/mypermissions?permissions=BROWSE_PROJECTS');
+      console.log('Project permissions:', JSON.stringify(projectPermissions, null, 2));
       
-      return typeSearch?.values || [];
+      // Try 6: Try the recent projects endpoint (might have different permissions)
+      console.log('Trying recent projects endpoint...');
+      const recentProjects = await this.makeRequest('/project/recent');
+      console.log('Recent projects returned:', recentProjects);
+      
+      if (recentProjects && recentProjects.length > 0) {
+        return recentProjects;
+      }
+      
+      // Try 7: Search for projects using a different approach - via issue search to find project keys
+      console.log('Trying to find projects via issue search...');
+      const issueSearch = await this.makeRequest('/search?jql=ORDER BY created DESC&maxResults=10&fields=project');
+      console.log('Issue search for projects:', issueSearch);
+      
+      // Extract unique projects from issues
+      const projectsFromIssues = [];
+      if (issueSearch?.issues) {
+        const seenProjects = new Set();
+        for (const issue of issueSearch.issues) {
+          if (issue.fields?.project && !seenProjects.has(issue.fields.project.key)) {
+            seenProjects.add(issue.fields.project.key);
+            projectsFromIssues.push(issue.fields.project);
+          }
+        }
+        console.log('Projects found via issue search:', projectsFromIssues.length);
+        if (projectsFromIssues.length > 0) {
+          return projectsFromIssues;
+        }
+      }
+      
+      return [];
     } catch (error) {
       console.error('Error in getProjects:', error);
       throw error;
