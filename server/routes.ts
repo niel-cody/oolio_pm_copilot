@@ -124,6 +124,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Debug endpoint to test Jira connection
   app.get("/api/jira/debug", async (req, res) => {
     try {
+      /**
+       * DOC: https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-myself/#api-rest-api-3-myself-get
+       * DATE_ACCESSED: 2025-08-29
+       * API: GET /rest/api/3/myself
+       * SCOPES: read:jira-user (granular) or read:jira-work (classic)
+       * NOTES: Do not log tokens or auth headers; surface status and limited info only.
+       */
       // Manual test of exact same auth format
       const email = process.env.JIRA_EMAIL;
       const token = process.env.JIRA_API_TOKEN;
@@ -133,13 +140,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('=== Manual Auth Test ===');
       console.log('Email:', email);
       console.log('Token length:', token?.length);
-      console.log('Token first 10 chars:', token?.substring(0, 10));
-      console.log('Token last 10 chars:', token?.substring(token.length - 10));
-      console.log('Has whitespace/newlines?:', /\s/.test(token || ''));
-      console.log('Encoded length:', encoded.length);
-      
-      // Test with different User-Agent
-      console.log('Base URL being used:', process.env.JIRA_BASE_URL);
+      console.log('Base URL:', process.env.JIRA_BASE_URL);
       
       const response = await fetch(`${process.env.JIRA_BASE_URL}/rest/api/3/myself`, {
         headers: {
@@ -150,19 +151,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       
       console.log('Manual fetch status:', response.status);
-      console.log('Manual fetch headers:', Object.fromEntries(response.headers.entries()));
       
       if (response.ok) {
         const data = await response.json();
         res.json({ success: true, user: data.displayName, accountId: data.accountId });
       } else {
         const errorText = await response.text();
-        console.log('Manual fetch error body:', errorText);
         res.status(500).json({ 
           success: false, 
           status: response.status, 
-          error: errorText,
-          authHeaderPreview: `Basic ${encoded.substring(0, 20)}...`
+          error: errorText
         });
       }
     } catch (error) {

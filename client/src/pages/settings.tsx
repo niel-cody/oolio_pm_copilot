@@ -26,6 +26,20 @@ export default function Settings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  // Jira tester state
+  const [isTesting, setIsTesting] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [authResult, setAuthResult] = useState<{
+    success: boolean;
+    user?: string;
+    accountId?: string;
+    status?: number;
+    error?: string;
+  } | null>(null);
+  const [jiraProjectsCount, setJiraProjectsCount] = useState<number | null>(null);
+  const [storedProjectsCount, setStoredProjectsCount] = useState<number | null>(null);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+
 
   const { data: epicTemplates } = useQuery<EpicTemplate[]>({
     queryKey: ['/api/templates/epic'],
@@ -210,92 +224,122 @@ As a {persona}, I want {capability} so that {outcome}.
                     </div>
                   </div>
 
-                  <div className="space-y-3">
-                    <p className="text-sm text-muted-foreground">
-                      Sync your Jira projects to improve app performance and enable features like faster project selection, offline access, and better caching.
-                    </p>
-                  </div>
-
                   <div className="flex gap-3 flex-wrap">
-                    <Button 
+                    <Button
                       onClick={async () => {
+                        setIsTesting(true);
+                        setAuthResult(null);
+                        setJiraProjectsCount(null);
+                        setStoredProjectsCount(null);
                         try {
-                          const response = await fetch('/api/jira/debug');
-                          const result = await response.json();
-                          console.log('Debug test result:', result);
-                          if (result.success) {
-                            alert(`✅ Authentication SUCCESS!\nUser: ${result.user}\nAccount ID: ${result.accountId}`);
-                          } else {
-                            alert(`❌ Authentication FAILED!\nStatus: ${result.status}\nError: ${result.error}`);
-                          }
-                        } catch (error) {
-                          console.error('Debug test failed:', error);
-                          alert('Debug test failed. Check console for details.');
+                          // 1) Test auth
+                          const debugRes = await fetch('/api/jira/debug');
+                          const debugJson = await debugRes.json();
+                          setAuthResult(debugJson);
+
+                          // 2) Count Jira projects
+                          const jiraRes = await fetch('/api/jira/projects');
+                          const jiraJson = await jiraRes.json();
+                          setJiraProjectsCount(Array.isArray(jiraJson) ? jiraJson.length : 0);
+
+                          // 3) Count stored projects
+                          const storedRes = await fetch('/api/projects');
+                          const storedJson = await storedRes.json();
+                          setStoredProjectsCount(Array.isArray(storedJson) ? storedJson.length : 0);
+                        } catch (e) {
+                          setAuthResult({ success: false, error: (e as Error).message });
+                        } finally {
+                          setIsTesting(false);
                         }
                       }}
                       variant="outline"
-                      data-testid="button-debug-auth"
+                      data-testid="button-test-connection"
                     >
-                      <i className="fas fa-bug mr-2"></i>
-                      Debug Auth
+                      {isTesting ? (
+                        <>
+                          <i className="fas fa-spinner fa-spin mr-2"></i>
+                          Testing…
+                        </>
+                      ) : (
+                        <>
+                          <i className="fas fa-plug mr-2"></i>
+                          Test Connection
+                        </>
+                      )}
                     </Button>
-                    
-                    <Button 
+
+                    <Button
                       onClick={async () => {
-                        try {
-                          const response = await fetch('/api/jira/projects');
-                          const projects = await response.json();
-                          console.log('Direct Jira projects:', projects);
-                          alert(`Found ${projects.length} projects directly from Jira:\n${projects.map((p: any) => `${p.key}: ${p.name}`).slice(0, 5).join('\n')}`);
-                        } catch (error) {
-                          console.error('Jira test failed:', error);
-                          alert('Failed to fetch projects from Jira. Check console for details.');
-                        }
-                      }}
-                      variant="outline"
-                      data-testid="button-test-jira"
-                    >
-                      <i className="fas fa-plug mr-2"></i>
-                      Test Jira Connection
-                    </Button>
-                    
-                    <Button 
-                      onClick={async () => {
+                        setIsSyncing(true);
+                        setSyncMessage(null);
                         try {
                           const response = await fetch('/api/projects/sync', { method: 'POST' });
                           const data = await response.json();
-                          console.log('Projects synced:', data);
-                          alert(`${data.message || 'Projects synced successfully!'}\nJira returned: ${data.jiraProjectCount || 'unknown'} projects`);
-                        } catch (error) {
-                          console.error('Sync failed:', error);
-                          alert('Failed to sync projects. Please check your Jira configuration.');
+                          setSyncMessage(data.message || 'Projects synced successfully');
+                          // refresh stored count after sync
+                          const storedRes = await fetch('/api/projects');
+                          const storedJson = await storedRes.json();
+                          setStoredProjectsCount(Array.isArray(storedJson) ? storedJson.length : 0);
+                        } catch (e) {
+                          setSyncMessage(`Sync failed: ${(e as Error).message}`);
+                        } finally {
+                          setIsSyncing(false);
                         }
                       }}
                       data-testid="button-sync-projects"
                     >
-                      <i className="fas fa-sync mr-2"></i>
-                      Sync Projects
-                    </Button>
-                    
-                    <Button 
-                      variant="outline"
-                      onClick={async () => {
-                        try {
-                          const response = await fetch('/api/projects');
-                          const projects = await response.json();
-                          console.log('Stored projects:', projects);
-                          alert(`Found ${projects.length} projects in local database${projects.length > 0 ? ':\n' + projects.map((p: any) => `${p.key}: ${p.name}`).slice(0, 5).join('\n') : ''}`);
-                        } catch (error) {
-                          console.error('Failed to fetch projects:', error);
-                          alert('Failed to fetch stored projects');
-                        }
-                      }}
-                      data-testid="button-view-stored-projects"
-                    >
-                      <i className="fas fa-eye mr-2"></i>
-                      View Stored
+                      {isSyncing ? (
+                        <>
+                          <i className="fas fa-spinner fa-spin mr-2"></i>
+                          Syncing…
+                        </>
+                      ) : (
+                        <>
+                          <i className="fas fa-sync mr-2"></i>
+                          Sync Projects
+                        </>
+                      )}
                     </Button>
                   </div>
+
+                  <Separator />
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="p-3 rounded-md border">
+                      <p className="text-xs text-muted-foreground mb-1">Auth</p>
+                      {authResult ? (
+                        authResult.success ? (
+                          <div className="flex items-center gap-2">
+                            <span className="h-2 w-2 rounded-full bg-chart-2" />
+                            <span className="text-sm text-foreground">{authResult.user || 'OK'}</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <span className="h-2 w-2 rounded-full bg-red-500" />
+                            <span className="text-sm text-foreground">{authResult.error || `Status ${authResult.status}`}</span>
+                          </div>
+                        )
+                      ) : (
+                        <span className="text-sm text-muted-foreground">Not tested</span>
+                      )}
+                    </div>
+
+                    <div className="p-3 rounded-md border">
+                      <p className="text-xs text-muted-foreground mb-1">Jira Projects</p>
+                      <span className="text-sm text-foreground">{jiraProjectsCount ?? '—'}</span>
+                    </div>
+
+                    <div className="p-3 rounded-md border">
+                      <p className="text-xs text-muted-foreground mb-1">Stored Projects</p>
+                      <span className="text-sm text-foreground">{storedProjectsCount ?? '—'}</span>
+                    </div>
+                  </div>
+
+                  {syncMessage && (
+                    <Alert>
+                      <AlertDescription>{syncMessage}</AlertDescription>
+                    </Alert>
+                  )}
                 </div>
               </CardContent>
             </Card>

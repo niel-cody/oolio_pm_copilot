@@ -1,0 +1,96 @@
+---
+description: Enforce official Atlassian API usage and best practices (no exceptions).
+globs:
+  - "**/*.{ts,tsx,js,jsx,mjs,cjs}"
+  - "app/**"
+  - "src/**"
+  - "server/**"
+  - "pages/**"
+  - "lib/**"
+alwaysApply: true
+---
+
+# Atlassian API — Source of Truth & Non-Negotiables
+
+**Absolute rule:** Always consult and conform to the **official Atlassian documentation** when reading from or writing to Atlassian products. If project code, examples, or prior commits disagree with the docs, **the docs win**—update the code and leave a note in the PR.
+
+## Allowed documentation domains (whitelist)
+
+- https://developer.atlassian.com/ (primary)
+- https://api.atlassian.com/ (OpenAPI/specs)
+- https://*.atlassian.net/ (tenant base for REST calls as per docs)
+- https://auth.atlassian.com/ and https://id.atlassian.com/ (auth flows)
+
+*Do not cite blogs, forums, or third-party wrappers as authority.*
+
+---
+
+## Mandatory “Doc Anchors” above any Atlassian call
+
+Every function/module that calls Atlassian services MUST include a **Doc Anchor** comment block linking to the exact API section used:
+
+```ts
+/**
+ * DOC: <official documentation URL for this endpoint or feature>
+ * DATE_ACCESSED: YYYY-MM-DD
+ * API: <resource path and method as per docs, e.g., POST /rest/api/3/issue>
+ * SCOPES: <minimum required OAuth scopes from docs>
+ * NOTES: <constraints, pagination, rate limits, special fields>
+ */
+
+If multiple endpoints are used, include multiple lines or a compact list.
+Versioning & endpoints
+Jira Cloud REST: Use the version and path formats specified in the docs (e.g., /rest/api/3/... or the api.atlassian.com/ex/jira/{cloudid}/rest/api/3/... form for OAuth/Cloud).
+Never guess versions or paths. Verify in docs and capture in the Doc Anchor.
+Expansions & query params (expand, fields, startAt, maxResults) must match documented names and types.
+Authentication & security
+Default to OAuth 2.0 (3LO) with minimum scopes required, as documented.
+Personal Access Tokens (PAT) are permitted only for local/server tooling where the docs explicitly allow; never ship PAT logic to the browser.
+Secrets stay server-side (env). Never expose tokens, refresh tokens, or Cloud IDs to the client.
+Follow documented token lifecycles and refresh flows. No proprietary workarounds.
+Enforce tenant scoping exactly as per docs (e.g., cloudid usage for api.atlassian.com).
+Pagination, rate limits, and retries
+Implement pagination per docs (startAt, maxResults, total) and stop conditions to avoid infinite loops.
+Handle rate limits exactly as specified:
+Honour 429 responses and Retry-After headers.
+Use exponential backoff with jitter; do not hot-loop.
+Log request IDs when provided. Do not log tokens or PII.
+Fields, schemas, and epics
+Never hard-code custom field IDs (e.g., “Epic Link”). Discover via documented endpoints (e.g., fields metadata) and cache safely.
+Respect documented differences between team-managed and company-managed projects (parent/epic relationships, field availability).
+Validate request/response bodies against the official schemas (OpenAPI) where possible; otherwise mirror field names/types exactly as documented.
+JQL & search safety
+Build JQL only with documented fields/operators.
+Escape or parameterise user inputs to JQL.
+Keep fields lists explicit to reduce payload and avoid accidental PII.
+Error handling
+Map HTTP status codes to documented meanings; surface actionable messages.
+Do not suppress errors that the docs mark as important (e.g., permission issues, invalid scopes).
+Where docs mark an API as experimental/deprecated, gate it behind config and document the rationale in code.
+Prohibited practices
+No scraping of HTML UIs.
+No reliance on unofficial SDKs or wrappers unless the docs endorse them explicitly.
+No writing tokens/credentials to logs, analytics, or client storage.
+No undocumented endpoints or parameters—if it isn’t in the docs, don’t use it.
+Pull request checklist (must pass)
+ Each Atlassian call has a Doc Anchor with the exact official URL, date accessed, API method/path, scopes.
+ Request/response shapes match the docs (field names, types, casing).
+ Pagination, rate-limit, and retry logic follows the docs.
+ OAuth scopes are the minimum required; secrets are server-only.
+ No hard-coded custom field IDs; discovery implemented where required.
+ Tests or mocks align with documented status codes and example payloads.
+ Comments explain team-managed vs company-managed differences where relevant.
+Example (pattern only)
+/**
+ * DOC: https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/
+ * DATE_ACCESSED: 2025-08-29
+ * API: POST /rest/api/3/issue
+ * SCOPES: write:jira-work
+ * NOTES: Validate required fields as per docs; handle 400/401/403; consider /issue/bulk for batching.
+ */
+export async function createJiraIssue(fields: Record<string, any>) {
+  // ...implementation strictly per docs...
+}
+When in doubt
+Stop, open the official docs, add/refresh the Doc Anchor, and proceed only when the behaviour is confirmed.
+If docs are ambiguous, add a code comment with the doc link and the open question, and prefer the most conservative interpretation until clarified.

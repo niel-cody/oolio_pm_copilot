@@ -3,6 +3,8 @@ import { JiraIssue, JiraProject, JiraVersion, GroomedEpic, GroomedStory } from "
 export class JiraClient {
   private baseUrl: string;
   private authHeader: string;
+  private storyPointsFieldId: string | null;
+  private storyPointsResolved: boolean;
 
   constructor() {
     if (!process.env.JIRA_BASE_URL || !process.env.JIRA_EMAIL || !process.env.JIRA_API_TOKEN) {
@@ -15,45 +17,73 @@ export class JiraClient {
     const credentials = `${process.env.JIRA_EMAIL}:${process.env.JIRA_API_TOKEN}`;
     const encodedCredentials = Buffer.from(credentials, 'utf8').toString('base64');
     this.authHeader = `Basic ${encodedCredentials}`;
+    this.storyPointsFieldId = null;
+    this.storyPointsResolved = false;
     
-    // Debug logging (without exposing credentials)
-    console.log('Jira Client initialized:');
+    // Minimal non-sensitive logging
+    console.log('Jira Client initialized');
     console.log('- Base URL:', this.baseUrl);
-    console.log('- Email:', process.env.JIRA_EMAIL);
-    console.log('- API Token length:', process.env.JIRA_API_TOKEN?.length);
-    console.log('- API Token starts with:', process.env.JIRA_API_TOKEN?.substring(0, 10) + '...');
-    console.log('- API Token ends with:', '...' + process.env.JIRA_API_TOKEN?.substring(-10));
-    console.log('- Credentials format check:', credentials.split(':').length === 2 ? 'OK' : 'Invalid');
-    console.log('- Auth header length:', this.authHeader.length);
-    console.log('- Auth header starts with:', this.authHeader.substring(0, 20) + '...');
   }
 
+  /**
+   * DOC: https://developer.atlassian.com/cloud/jira/platform/rest/v3/intro/#rate-limiting
+   * DATE_ACCESSED: 2025-08-29
+   * API: Generic request wrapper for /rest/api/3/* endpoints
+   * SCOPES: read:jira-work, write:jira-work (depending on method)
+   * NOTES: Honors 429 with Retry-After, exponential backoff with jitter; logs request IDs if present.
+   */
   private async makeRequest(endpoint: string, options: RequestInit = {}) {
     const url = `${this.baseUrl}/rest/api/3${endpoint}`;
     
-    console.log(`Making Jira API request to: ${url}`);
-    
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Authorization': this.authHeader,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        ...options.headers,
-      },
-    });
+    const maxRetries = 4;
+    let attempt = 0;
+    while (true) {
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          'Authorization': this.authHeader,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          ...options.headers,
+        },
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`Jira API error (${response.status}): ${errorText}`);
-      throw new Error(`Jira API error (${response.status}): ${errorText}`);
+      const reqId = response.headers.get('x-request-id') || response.headers.get('x-atlassian-request-id') || undefined;
+      if (reqId) console.log(`Jira request id: ${reqId} (${endpoint})`);
+
+      if (response.status === 429 && attempt < maxRetries) {
+        const retryAfterHeader = response.headers.get('retry-after');
+        const retryAfterMs = retryAfterHeader ? parseFloat(retryAfterHeader) * 1000 : 0;
+        const backoff = Math.min(16000, 1000 * Math.pow(2, attempt));
+        const jitter = Math.floor(Math.random() * 250);
+        const delayMs = Math.max(retryAfterMs, backoff + jitter);
+        console.warn(`429 received. Retrying in ${delayMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+        await new Promise(r => setTimeout(r, delayMs));
+        attempt++;
+        continue;
+      }
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Jira API error (${response.status}) for ${endpoint}: ${errorText}`);
+        throw new Error(`Jira API error (${response.status}): ${errorText}`);
+      }
+
+      if (response.status === 204) {
+        return undefined as unknown as any;
+      }
+
+      const result = await response.json();
+      return result;
     }
-
-    const result = await response.json();
-    console.log(`API response for ${endpoint}:`, JSON.stringify(result, null, 2).substring(0, 500));
-    return result;
   }
 
+  /**
+   * DOC: https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-search/#api-rest-api-3-search-post
+   * DATE_ACCESSED: 2025-08-29
+   * API: POST /rest/api/3/search
+   * SCOPES: read:jira-work
+   */
   async searchIssues(jql: string, fields?: string[]): Promise<JiraIssue[]> {
     const body = {
       jql,
@@ -84,6 +114,12 @@ export class JiraClient {
     return result.issues || [];
   }
 
+  /**
+   * DOC: https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-search/#api-rest-api-3-search-post
+   * DATE_ACCESSED: 2025-08-29
+   * API: POST /rest/api/3/search (via helper)
+   * SCOPES: read:jira-work
+   */
   async getIdeasToGroom(projectKey: string): Promise<JiraIssue[]> {
     const jql = `project = "${projectKey}" AND issuetype in (Idea, Task, Story) AND statusCategory = "To Do" ORDER BY created DESC`;
     return this.searchIssues(jql);
@@ -99,6 +135,12 @@ export class JiraClient {
     return this.searchIssues(jql);
   }
 
+  /**
+   * DOC: https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/#api-rest-api-3-issue-post
+   * DATE_ACCESSED: 2025-08-29
+   * API: POST /rest/api/3/issue
+   * SCOPES: write:jira-work
+   */
   async createIssue(fields: Record<string, any>): Promise<JiraIssue> {
     const body = { fields };
     const result = await this.makeRequest('/issue', {
@@ -110,10 +152,22 @@ export class JiraClient {
     return this.getIssue(result.key);
   }
 
+  /**
+   * DOC: https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/#api-rest-api-3-issue-issueidorkey-get
+   * DATE_ACCESSED: 2025-08-29
+   * API: GET /rest/api/3/issue/{issueIdOrKey}
+   * SCOPES: read:jira-work
+   */
   async getIssue(issueKey: string): Promise<JiraIssue> {
     return this.makeRequest(`/issue/${issueKey}`);
   }
 
+  /**
+   * DOC: https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-links/#api-rest-api-3-issuelink-post
+   * DATE_ACCESSED: 2025-08-29
+   * API: POST /rest/api/3/issueLink
+   * SCOPES: write:jira-work
+   */
   async linkIssues(inwardKey: string, outwardKey: string, linkType: string = 'Blocks'): Promise<void> {
     const body = {
       type: { name: linkType },
@@ -127,6 +181,13 @@ export class JiraClient {
     });
   }
 
+  /**
+   * DOC: https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-projects/#api-rest-api-3-project-search-get
+   * DATE_ACCESSED: 2025-08-29
+   * API: GET /rest/api/3/project/search
+   * SCOPES: read:jira-work
+   * NOTES: Uses pagination (startAt, maxResults) and expand params. Fallbacks: GET /rest/api/3/project (deprecated), POST /rest/api/3/search (project via issues) if necessary.
+   */
   async getProjects(): Promise<JiraProject[]> {
     try {
       // First, validate credentials
@@ -201,10 +262,23 @@ export class JiraClient {
     }
   }
 
+  /**
+   * DOC: https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-project-versions/#api-rest-api-3-project-projectidorkey-versions-get
+   * DATE_ACCESSED: 2025-08-29
+   * API: GET /rest/api/3/project/{projectIdOrKey}/versions
+   * SCOPES: read:jira-work
+   */
   async getVersions(projectKey: string): Promise<JiraVersion[]> {
-    return this.makeRequest(`/project/${projectKey}/version`);
+    return this.makeRequest(`/project/${projectKey}/versions`);
   }
 
+  /**
+   * DOC: https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/#api-rest-api-3-issue-post
+   * DATE_ACCESSED: 2025-08-29
+   * API: POST /rest/api/3/issue
+   * SCOPES: write:jira-work
+   * NOTES: Request body follows docs; do not hard-code custom field IDs.
+   */
   async createEpicFromGroomed(groomed: GroomedEpic, projectKey: string, issueTypeId: string): Promise<JiraIssue> {
     const fields: Record<string, any> = {
       project: { key: projectKey },
@@ -235,6 +309,13 @@ export class JiraClient {
     return this.createIssue(fields);
   }
 
+  /**
+   * DOC: https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/#api-rest-api-3-issue-post
+   * DATE_ACCESSED: 2025-08-29
+   * API: POST /rest/api/3/issue
+   * SCOPES: write:jira-work
+   * NOTES: Dynamically resolves Story Points custom field id via GET /rest/api/3/field.
+   */
   async createStoryFromGroomed(groomed: GroomedStory, projectKey: string, issueTypeId: string): Promise<JiraIssue> {
     const fields: Record<string, any> = {
       project: { key: projectKey },
@@ -263,7 +344,10 @@ export class JiraClient {
     }
 
     if (groomed.storyPoints) {
-      fields.customfield_10016 = groomed.storyPoints; // Story Points field - may vary
+      const spId = await this.resolveStoryPointsFieldId();
+      if (spId) {
+        fields[spId] = groomed.storyPoints;
+      }
     }
 
     if (groomed.parentEpicKey) {
@@ -273,6 +357,37 @@ export class JiraClient {
     return this.createIssue(fields);
   }
 
+  /**
+   * DOC: https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-fields/#api-rest-api-3-field-get
+   * DATE_ACCESSED: 2025-08-29
+   * API: GET /rest/api/3/field
+   * SCOPES: read:jira-work
+   * NOTES: Searches for Story Points field by name; caches result per instance.
+   */
+  private async resolveStoryPointsFieldId(): Promise<string | null> {
+    if (this.storyPointsResolved) return this.storyPointsFieldId;
+    try {
+      const fields = await this.makeRequest('/field');
+      const match = (Array.isArray(fields) ? fields : []).find((f: any) => {
+        const name = (f.name || '').toString().toLowerCase();
+        return name === 'story points' || name === 'story point estimate' || name.includes('story point');
+      });
+      this.storyPointsFieldId = (match && typeof match.id === 'string') ? match.id : null;
+      this.storyPointsResolved = true;
+      return this.storyPointsFieldId;
+    } catch {
+      this.storyPointsFieldId = null;
+      this.storyPointsResolved = true;
+      return null;
+    }
+  }
+
+  /**
+   * DOC: https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-project-versions/#api-rest-api-3-version-id-put
+   * DATE_ACCESSED: 2025-08-29
+   * API: PUT /rest/api/3/version/{id}
+   * SCOPES: write:jira-work
+   */
   async updateVersionDescription(projectKey: string, versionId: string, description: string): Promise<void> {
     const body = { description };
     await this.makeRequest(`/version/${versionId}`, {
